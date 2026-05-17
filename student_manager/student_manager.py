@@ -3,7 +3,7 @@ import reflex as rx
 class Resource(rx.Model):
     title:str
     url: str
-    note: str =""
+    note: str = ""
 
 class Category(rx.Model):
     name: str
@@ -18,6 +18,11 @@ class State(rx.State):
     new_category_name: str = ""  #2. The input:stores currently typed category name
     new_resource_title: str = ""
     new_resource_url: str = ""
+    new_resource_note: str = ""
+    edit_category_name: str = ""      #variables for renaming
+
+    def set_new_resource_note(self, note: str):
+        self.new_resource_note = note
 
     #Pointer to remember which category is currently open
     selected_category_name: str = ""
@@ -55,8 +60,9 @@ class State(rx.State):
     def add_resource(self):
         new_res = Resource(                 #creating object using our new Resource blueprint
             title = self.new_resource_title,
-            url= self.new_resource_url
-        )
+            url= self.new_resource_url,
+            note= self.new_resource_note
+            )
 
         for cat in self.categories:          #pushing the resource into the selected category
             if cat.name == self.selected_category_name:
@@ -65,6 +71,7 @@ class State(rx.State):
 
         self.new_resource_title = ""          #Cleaning up the input boxes
         self.new_resource_url = ""
+        self.new_resource_note = ""
         self.categories = self.categories
 
     #Deleting the resource
@@ -75,11 +82,43 @@ class State(rx.State):
                 break
         self.categories = self.categories
 
+    def start_editing_resource(self, resource_to_edit: Resource):
+        #copying the data back up to the sticky notes(input boxes)
+        self.new_resource_title = resource_to_edit.title
+        self.new_resource_url = resource_to_edit.url
+        self.new_resource_note = resource_to_edit.note
+
+        #Deleting the old version from the list
+        self.delete_resource(resource_to_edit)
+
     def set_new_resource_title(self, title: str):
         self.new_resource_title = title
 
     def set_new_resource_url(self, url: str):
         self.new_resource_url = url
+
+    def set_edit_category_name(self, name:str):
+        self.edit_category_name = name
+
+    def rename_category(self):
+        if self.edit_category_name == "":     #if user leaves the box blank
+            return
+        
+        for cat in self.categories:   #finding the active folder and changing its name
+            if cat.name == self.selected_category_name:
+                cat.name = self.edit_category_name
+                #updating the pointer so UI doesnt lose track of the open folder
+                self.selected_category_name = self.edit_category_name
+                break
+
+            self.edit_category_name = ""
+            self.categories = self.categories
+    def delete_category(self):
+        #rebuilding the list, keeping only categories that do not match the current pointer
+        self.categories = [cat for cat in self.categories if cat.name != self.selected_category_name]
+        self.clear_selection()    #reset the pointer so app goes back to the dashboard
+
+    
 
     
 #-------------------------------------------------------------------------------------------------
@@ -97,7 +136,25 @@ def index()-> rx.Component:
                 #If true: show the detail view
                 rx.vstack(
                     rx.button("<-Back to Dashboard", on_click = State.clear_selection),
-                    rx.heading(State.selected_category_name, size="7"),
+                    #THE HEADER ROW
+                    rx.hstack(
+                        rx.heading(State.selected_category_name, size="7"),
+                        
+                        rx.hstack(
+                            rx.input(
+                                placeholder = "Rename folder",
+                                on_change = State.set_edit_category_name,
+                                value = State.edit_category_name,
+                                width = "200px"
+                            ),
+                            rx.button("Rename", on_click = State.rename_category, olor_scheme = "green"),
+                            rx.button("Delete Folder", on_click = State.delete_category, color_scheme = "red", variant = "outline"),
+                            spacing= "2"
+                        ),
+                        width = "100%",
+                        justify = "between", #heading left , and rename box right
+                        align = "center"
+                    ),
                     #THE RESOURCE FORM
                     rx.vstack(
                         rx.input(
@@ -110,6 +167,12 @@ def index()-> rx.Component:
                             placeholder= "URL (https: //...)",
                             on_change = State.set_new_resource_url,
                             value = State.new_resource_url,
+                            width = "100%"
+                        ),
+                        rx.text_area(
+                            placeholder = "Add a note",
+                            on_change= State.set_new_resource_note,
+                            value= State.new_resource_note,
                             width = "100%"
                         ),
                         rx.button("Save Resource", on_click= State.add_resource, width= "100%"),
@@ -126,30 +189,26 @@ def index()-> rx.Component:
                         rx.heading("Saved Resources", size = "4"),
                         rx.foreach(
                             State.current_items,
-                            lambda res:rx.hstack(
-                                rx.text(res.title, weight = "medium"),
-
+                            lambda res: rx.vstack(
                                 rx.hstack(
-                                    rx.link(
-                                    "Open Link->",
-                                    href= res.url,
-                                    is_external = True,
-                                    color_scheme = 'blue'
+                                    rx.text(res.title, weight="bold"),
+                                    rx.hstack(
+                                        rx.link("Open Link →", href=res.url, is_external=True, color_scheme="blue"),
+                                        rx.button("Edit", color_scheme = "yellow", size = "1", variant = "soft", on_click = lambda: State.start_editing_resource(res)),
+                                        rx.button("X", color_scheme="red", size="1", variant="soft", on_click=lambda: State.delete_resource(res)),
+                                        spacing="3"
                                     ),
-                                    rx.button(
-                                        "X",
-                                        color_scheme= "red",
-                                        size= "1",
-                                        variant = "soft",
-                                        on_click= lambda: State.delete_resource(res)
-                                    ),
-                                    spacing= "3"
+                                    width="100%",
+                                    justify="between",
                                 ),
-                                width = '100%',
-                                justify = "between",
-                                padding = "2",
-                                background_color = rx.color("gray",2),
-                                border_radius = "md",
+                                
+                                rx.text(res.note, size="2", color=rx.color("gray", 11)),
+                                
+                                width="100%",
+                                padding="3",
+                                background_color=rx.color("gray", 2),
+                                border_radius="md",
+                                align="start",
                             )
                         ),
                         width = "400px",
