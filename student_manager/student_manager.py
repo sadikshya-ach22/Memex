@@ -1,4 +1,6 @@
 import reflex as rx
+import json
+import os
 
 class Resource(rx.Model):
     title:str
@@ -27,6 +29,36 @@ class State(rx.State):
     #Pointer to remember which category is currently open
     selected_category_name: str = ""
 
+    #DATA PERSISTENCE LOGIC
+    def save_data(self):
+        #Manually constructin the dictionary shape
+        clean_data_to_save = []
+        for cat in self.categories:
+            # 1. Converting the inner Resource objects to dictionaries
+            resources_list = [{"title": res.title, "url": res.url, "note": res.note} for res in cat.items]
+            
+            # 2. Building the Category dictionary
+            category_dict = {
+                "name": cat.name,
+                "items": resources_list
+            }
+            clean_data_to_save.append(category_dict)
+
+        # 3. Save the clean data
+        with open("data.json", "w") as f:
+            json.dump(clean_data_to_save, f)
+    
+    def load_data(self):
+        #Runs when page opens. Reads the JSON file back into the Brain.
+        if os.path.exists("data.json"): #check if file even exists yet
+            with open("data.json", "r") as f:
+                try:
+                    raw_data = json.load(f) #reading the txt and converting back to Pthon lists
+
+                    self.categories = [Category(**cat) for cat in raw_data] #rebuilding custom Category objs from raw data
+                except json.JSONDecodeError:
+                    self.categories = [] #start fresh if file is corrupted or empty
+
     #Logic for Categories
     def set_new_category_name(self, name: str):
         self.new_category_name = name
@@ -38,6 +70,7 @@ class State(rx.State):
 
             #Clearing the 'sticky note' so the input box becomes empty again
             self.new_category_name = ""
+            self.save_data()
     
     #The opener: this function sets "Pointer" to the card user clicked.
     def select_category(self, cat: Category):
@@ -73,6 +106,7 @@ class State(rx.State):
         self.new_resource_url = ""
         self.new_resource_note = ""
         self.categories = self.categories
+        self.save_data()
 
     #Deleting the resource
     def delete_resource(self, resource_to_delete: Resource):
@@ -81,6 +115,7 @@ class State(rx.State):
                 cat.items.remove(resource_to_delete)
                 break
         self.categories = self.categories
+        self.save_data()
 
     def start_editing_resource(self, resource_to_edit: Resource):
         #copying the data back up to the sticky notes(input boxes)
@@ -111,15 +146,17 @@ class State(rx.State):
                 self.selected_category_name = self.edit_category_name
                 break
 
-            self.edit_category_name = ""
-            self.categories = self.categories
+        self.edit_category_name = ""
+        self.categories = self.categories
+        self.save_data()
+
     def delete_category(self):
         #rebuilding the list, keeping only categories that do not match the current pointer
         self.categories = [cat for cat in self.categories if cat.name != self.selected_category_name]
         self.clear_selection()    #reset the pointer so app goes back to the dashboard
+        self.save_data()
 
     
-
     
 #-------------------------------------------------------------------------------------------------
 # Defining the body of the app (UI)
@@ -147,7 +184,7 @@ def index()-> rx.Component:
                                 value = State.edit_category_name,
                                 width = "200px"
                             ),
-                            rx.button("Rename", on_click = State.rename_category, olor_scheme = "green"),
+                            rx.button("Rename", on_click = State.rename_category, color_scheme = "green"),
                             rx.button("Delete Folder", on_click = State.delete_category, color_scheme = "red", variant = "outline"),
                             spacing= "2"
                         ),
@@ -274,4 +311,4 @@ def index()-> rx.Component:
     )
 
 app = rx.App()
-app.add_page(index)
+app.add_page(index, on_load = State.load_data)
